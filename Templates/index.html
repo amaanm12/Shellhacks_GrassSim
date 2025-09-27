@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RootDown: The Water-Wise Lawn Simulator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            gap: 30px;
+        }
+        .container {
+            max-width: 800px;
+        }
+        h1 {
+            color: #2c5282;
+            text-align: center;
+        }
+        #game-board {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+        }
+        #stats-display {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            background-color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #stats-display div { font-size: 1.2em; font-weight: bold; }
+        #message-bar {
+            width: 100%;
+            text-align: center;
+            padding: 10px;
+            background-color: #c3dafe;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            min-height: 24px;
+        }
+        #lawn-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            gap: 10px;
+        }
+        .lawn-tile {
+            width: 100px;
+            height: 100px;
+            border: 2px solid #a0aec0;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .lawn-tile:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+        .lawn-tile.selected {
+            border-color: #f6e05e;
+            border-width: 4px;
+        }
+        .plant-name { font-weight: bold; }
+        .moisture-level { font-size: 0.9em; }
+        .sidebar {
+            width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .sidebar h3 { margin-top: 0; text-align: center; }
+        .plant-button, .action-button {
+            width: 100%;
+            padding: 12px;
+            font-size: 1em;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .action-button:hover { filter: brightness(0.9); }
+        #water-btn { background-color: #63b3ed; color: white; }
+        #next-day-btn { background-color: #f6ad55; color: white; }
+        #reset-btn { background-color: #e53e3e; color: white; }
+        .plant-button { background-color: #cbd5e0; }
+        .plant-button:hover { background-color: #a0aec0; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>RootDown Simulator</h1>
+        <div id="game-board">
+            <div id="stats-display">
+                <div id="day-counter">Day: 1</div>
+                <div id="aquifer-level">Aquifer: 100%</div>
+            </div>
+            <div id="message-bar">Welcome!</div>
+            <div id="lawn-grid"></div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <h3>Actions</h3>
+        <button id="water-btn" class="action-button">Water Lawn (-10💧)</button>
+        <button id="next-day-btn" class="action-button">Next Day ☀️</button>
+        
+        <h3>Plants</h3>
+        <button class="plant-button" data-plant="St. Augustine">St. Augustine</button>
+        <button class="plant-button" data-plant="Wildflowers">Wildflowers</button>
+        <button class="plant-button" data-plant="Zoysia">Zoysia</button>
+        <button class="plant-button" data-plant="Dirt">Clear to Dirt</button>
+
+        <h3 style="margin-top: 20px;">New Game</h3>
+        <button id="reset-btn" class="action-button">Reset Game</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const lawnGrid = document.getElementById('lawn-grid');
+            const dayCounter = document.getElementById('day-counter');
+            const aquiferLevel = document.getElementById('aquifer-level');
+            const messageBar = document.getElementById('message-bar');
+
+            // --- State ---
+            let selectedTileIndex = null;
+            const PLANT_COLORS = {
+                "Dirt": "#a1887f",
+                "St. Augustine": "#4caf50",
+                "Wildflowers": "#ffeb3b",
+                "Zoysia": "#8bc34a",
+                "Dead": "#5d4037"
+            };
+
+            // --- API Communication ---
+            async function postAction(endpoint, body = {}) {
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    const state = await response.json();
+                    renderGameState(state);
+                } catch (error) {
+                    console.error('Error performing action:', error);
+                    messageBar.textContent = "Error connecting to server.";
+                }
+            }
+
+            // --- Rendering ---
+            function renderGameState(state) {
+                dayCounter.textContent = `Day: ${state.day}`;
+                aquiferLevel.textContent = `Aquifer: ${state.aquifer_level}%`;
+                messageBar.textContent = state.message;
+
+                lawnGrid.innerHTML = '';
+                state.lawn_grid.forEach((tile, index) => {
+                    const tileEl = document.createElement('div');
+                    tileEl.classList.add('lawn-tile');
+                    tileEl.style.backgroundColor = PLANT_COLORS[tile.plant_type] || '#ccc';
+                    tileEl.dataset.index = index;
+                    tileEl.innerHTML = `
+                        <div class="plant-name">${tile.plant_type}</div>
+                        <div class="moisture-level">💧 ${tile.moisture}%</div>
+                    `;
+                    if (index === selectedTileIndex) {
+                        tileEl.classList.add('selected');
+                    }
+                    lawnGrid.appendChild(tileEl);
+                });
+
+                if (state.game_over) {
+                    document.querySelectorAll('.action-button, .plant-button').forEach(btn => {
+                        if (btn.id !== 'reset-btn') btn.disabled = true;
+                    });
+                } else {
+                     document.querySelectorAll('.action-button, .plant-button').forEach(btn => btn.disabled = false);
+                }
+            }
+
+            // --- Event Listeners ---
+            document.getElementById('water-btn').addEventListener('click', () => postAction('/water'));
+            document.getElementById('next-day-btn').addEventListener('click', () => postAction('/nextday'));
+            document.getElementById('reset-btn').addEventListener('click', () => postAction('/reset'));
+            
+            lawnGrid.addEventListener('click', (event) => {
+                const tile = event.target.closest('.lawn-tile');
+                if (tile) {
+                    const index = parseInt(tile.dataset.index);
+                    if (selectedTileIndex === index) {
+                        selectedTileIndex = null; // Deselect
+                    } else {
+                        selectedTileIndex = index;
+                    }
+                    // Re-render to show selection
+                    document.querySelectorAll('.lawn-tile').forEach((el, i) => {
+                         el.classList.toggle('selected', i === selectedTileIndex);
+                    });
+                }
+            });
+
+            document.querySelectorAll('.plant-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (selectedTileIndex !== null) {
+                        const plantName = button.dataset.plant;
+                        postAction('/plant', { tile_index: selectedTileIndex, plant_name: plantName });
+                        selectedTileIndex = null; // Deselect after planting
+                    } else {
+                        messageBar.textContent = "Select a lawn tile first!";
+                    }
+                });
+            });
+
+            // --- Initial Load ---
+            async function initializeGame() {
+                const response = await fetch('/gamestate');
+                const state = await response.json();
+                renderGameState(state);
+            }
+
+            initializeGame();
+        });
+    </script>
+</body>
+</html>
