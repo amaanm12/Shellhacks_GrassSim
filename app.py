@@ -6,7 +6,7 @@ from flask import Flask, jsonify, render_template, request
 app = Flask(__name__)
 
 # --- Game Configuration ---
-GRID_SIZE = 10
+GRID_SIZE = 5  # Changed from 10 to 5
 WATER_COST = 10
 WATER_REPLENISH = 30
 
@@ -151,6 +151,24 @@ def next_day():
         check_game_over()
         
     return jsonify(game_state)
+
+@app.route("/")
+def home():
+    # Choose a random weather condition
+    weather = random.choice(["sunny", "dry", "cloudy", "rainy"])
+
+    # Determine the lawn color change level based on weather
+    if weather == "sunny":
+        style = 1  # change 1 level darker
+    elif weather == "dry":
+        style = 2  # change 2 levels darker
+    elif weather == "cloudy":
+        style = 0  # no change
+    elif weather == "rainy":
+        style = -1  # one level lighter
+
+    # Pass weather info to the template title and style for the lawn appearance.
+    return render_template("index.html", title=f"Weather: {weather}", style=style)
 
 # --- Run the App ---
 if __name__ == '__main__':

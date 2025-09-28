@@ -37,16 +37,18 @@
             padding: 15px;
             border-radius: 8px;
         }
-        .stats-display div { font-size: 1.2em; font-weight: bold; margin-bottom: 10px; }
+        .stats-display div { font-size: 1.1em; font-weight: bold; margin-bottom: 10px; }
         .controls h3 { margin-top: 0; }
         .message-bar {
             width: 100%;
+            max-width: 800px;
             text-align: center;
             padding: 10px;
             background-color: #c3dafe;
             border-radius: 8px;
             margin: 20px 0;
             min-height: 24px;
+            font-weight: bold;
         }
         .action-button {
             width: 100%;
@@ -68,11 +70,12 @@
     <h1>RootDown Simulator</h1>
     <div class="message-bar">Loading...</div>
     <div class="container">
-        <canvas id="game-canvas" width="500" height="500"></canvas>
+        <canvas id="game-canvas" width="250" height="250"></canvas>
         <div class="sidebar">
             <div class="stats-display">
                 <div id="day-counter">Day: 1</div>
-                <div id="aquifer-level">Aquifer: 100%</div>
+                <div id="aquifer-level">Aquifer: 100</div>
+                <div id="weather-status">Weather: Sunny</div>
             </div>
             <div class="controls">
                 <h3>Actions & Controls</h3>
@@ -90,11 +93,13 @@
             const canvas = document.getElementById('game-canvas');
             const ctx = canvas.getContext('2d');
             
+            // Get handles for all UI elements
             const dayCounter = document.getElementById('day-counter');
             const aquiferLevel = document.getElementById('aquifer-level');
+            const weatherStatus = document.getElementById('weather-status'); // New element for weather
             const messageBar = document.querySelector('.message-bar');
             
-            const GRID_SIZE = 10;
+            const GRID_SIZE = 5;
             const TILE_SIZE = canvas.width / GRID_SIZE;
 
             let gameState = {};
@@ -107,6 +112,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body),
                     });
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     gameState = await response.json();
                     renderGameState();
                 } catch (error) {
@@ -116,22 +122,34 @@
             }
 
             // --- Rendering ---
+            
+            /**
+             * REVISED: Calculates a more natural grass color.
+             * Interpolates from a brownish-yellow (0 moisture) to a lush green (100 moisture).
+             */
             function getMoistureColor(moisture) {
-                // Interpolates from yellow (0 moisture) to green (100 moisture)
-                const red = Math.max(0, 255 - (moisture * 2.0));
-                const green = Math.min(255, 150 + moisture);
-                return `rgb(${red}, ${green}, 50)`;
+                const red = 200 - (moisture * 1.6);
+                const green = 100 + moisture;
+                const blue = 50;
+                return `rgb(${red}, ${green}, ${blue})`;
             }
 
+            /**
+             * REVISED: Main rendering function now includes weather display and visual effects.
+             */
             function renderGameState() {
-                if (!gameState.lawn_grid) return;
+                if (!gameState || !gameState.lawn_grid) return;
 
+                // Update text displays
                 dayCounter.textContent = `Day: ${gameState.day}`;
-                aquiferLevel.textContent = `Aquifer: ${gameState.aquifer_level}%`;
+                aquiferLevel.textContent = `Aquifer: ${gameState.aquifer_level}`;
+                weatherStatus.textContent = `Weather: ${gameState.weather}`; // Update weather text
                 messageBar.textContent = gameState.message;
 
+                // Clear canvas for redraw
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+                // Render the lawn grid
                 for (let y = 0; y < GRID_SIZE; y++) {
                     for (let x = 0; x < GRID_SIZE; x++) {
                         const index = y * GRID_SIZE + x;
@@ -141,25 +159,42 @@
                             ctx.fillStyle = getMoistureColor(tile.moisture);
                             ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                             
+                            // Draw lines to indicate a mowed patch
                             if(tile.is_mowed){
                                 ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
                                 for(let i = 0; i < TILE_SIZE; i += 8){
                                     ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE + i, TILE_SIZE, 3);
                                 }
                             }
-                        } else if (tile.type === "sinkhole") {
-                            ctx.fillStyle = '#2d3748';
-                            ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        } else { // Dirt
-                            ctx.fillStyle = '#a1887f';
+                        }
+                         // The backend doesn't generate other types, but this is here for future expansion
+                        else { 
+                            ctx.fillStyle = '#a1887f'; // Default dirt color
                             ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                         }
                     }
                 }
 
+                // Render the player
                 const player = gameState.player_pos;
-                ctx.fillStyle = 'red';
-                ctx.fillRect(player.x * TILE_SIZE + TILE_SIZE / 4, player.y * TILE_SIZE + TILE_SIZE / 4, TILE_SIZE / 2, TILE_SIZE / 2);
+                if (player) {
+                    const playerSize = TILE_SIZE / 2;
+                    const playerOffset = TILE_SIZE / 4;
+                    ctx.fillStyle = '#E53E3E'; // Red color for player
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.fillRect(player.x * TILE_SIZE + playerOffset, player.y * TILE_SIZE + playerOffset, playerSize, playerSize);
+                    ctx.strokeRect(player.x * TILE_SIZE + playerOffset, player.y * TILE_SIZE + playerOffset, playerSize, playerSize);
+                }
+
+                // NEW: Render weather effects as an overlay
+                if (gameState.weather === "Rainy") {
+                    ctx.fillStyle = 'rgba(100, 149, 237, 0.3)'; // Semi-transparent blue
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                } else if (gameState.weather === "Extremely Sunny") {
+                    ctx.fillStyle = 'rgba(255, 215, 0, 0.2)'; // Semi-transparent yellow
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
             }
             
             // --- Event Listeners ---
@@ -167,24 +202,31 @@
             document.getElementById('water-btn').addEventListener('click', () => postAction('/water'));
 
             window.addEventListener('keydown', (e) => {
-                if (gameState.game_over) return;
+                if (gameState.game_over) return; // Disable controls if game is over
                 
-                switch(e.key.toLowerCase()){
+                const key = e.key.toLowerCase();
+                let actionTaken = true; // Flag to prevent default browser actions
+
+                switch(key){
                     case 'w':
                     case 'a':
                     case 's':
                     case 'd':
-                        e.preventDefault();
-                        postAction('/move', { direction: e.key.toLowerCase() });
+                        postAction('/move', { direction: key });
                         break;
                     case ' ': // Spacebar
-                        e.preventDefault();
                         postAction('/mow');
                         break;
                     case 'enter':
-                        e.preventDefault();
                         postAction('/nextday');
                         break;
+                    default:
+                        actionTaken = false; // No relevant action was taken
+                        break;
+                }
+                
+                if (actionTaken) {
+                    e.preventDefault();
                 }
             });
 
@@ -192,11 +234,12 @@
             async function initializeGame() {
                 try {
                     const response = await fetch('/gamestate');
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     gameState = await response.json();
                     renderGameState();
                 } catch (error) {
                     console.error("Failed to initialize game:", error);
-                    messageBar.textContent = "Error loading game. Check console for details.";
+                    messageBar.textContent = "Error loading game. Please try refreshing the page.";
                 }
             }
             
